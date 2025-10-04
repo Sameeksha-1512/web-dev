@@ -1,0 +1,1041 @@
+File: client/App.tsx
+```
+import "./global.css";
+
+import { Toaster } from "@/components/ui/toaster";
+import { createRoot } from "react-dom/client";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Index from "./pages/Index";
+import NotFound from "./pages/NotFound";
+import Teacher from "./pages/Teacher";
+import StudentPortal from "./pages/StudentPortal";
+import StudentSession from "./pages/StudentSession";
+import { Header } from "./components/Header";
+import { Footer } from "./components/Footer";
+
+const queryClient = new QueryClient();
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <div className="flex min-h-screen flex-col bg-gradient-to-br from-brand-50 to-background text-foreground">
+          <Header />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/teacher" element={<Teacher />} />
+              <Route path="/student" element={<StudentPortal />} />
+              <Route path="/s/:token" element={<StudentSession />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
+      </BrowserRouter>
+    </TooltipProvider>
+  </QueryClientProvider>
+);
+
+createRoot(document.getElementById("root")!).render(<App />);
+```
+
+File: client/components/Header.tsx
+```
+import { Link, NavLink, useLocation } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+export function Header() {
+  const location = useLocation();
+  const isHome = location.pathname === "/";
+  return (
+    <header className={cn("sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60")}>      
+      <div className="container mx-auto flex h-16 items-center justify-between px-4">
+        <Link to="/" className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-600 to-brand-400" />
+          <span className="font-extrabold tracking-tight">Attendify</span>
+        </Link>
+        <nav className="hidden items-center gap-2 md:flex">
+          <NavLink to="/teacher" className={({isActive})=>cn("px-3 py-2 rounded-md text-sm font-medium hover:text-primary", isActive && "text-primary")}>Teacher</NavLink>
+          <NavLink to="/student" className={({isActive})=>cn("px-3 py-2 rounded-md text-sm font-medium hover:text-primary", isActive && "text-primary")}>Student</NavLink>
+          <a href="#how-it-works" className="px-3 py-2 rounded-md text-sm font-medium hover:text-primary">How it works</a>
+        </nav>
+        <div className="flex items-center gap-2">
+          {!isHome && (
+            <Link to="/" className="hidden md:block">
+              <Button variant="ghost">Home</Button>
+            </Link>
+          )}
+          <Link to="/teacher">
+            <Button className="bg-brand-600 hover:bg-brand-700">Start a session</Button>
+          </Link>
+        </div>
+      </div>
+    </header>
+  );
+}
+```
+
+File: client/components/Footer.tsx
+```
+export function Footer() {
+  return (
+    <footer className="border-t bg-background/60">
+      <div className="container mx-auto flex flex-col items-center justify-between gap-4 px-4 py-6 md:h-16 md:flex-row">
+        <p className="text-sm text-muted-foreground">©️ {new Date().getFullYear()} Attendify. All rights reserved.</p>
+        <div className="text-sm text-muted-foreground flex items-center gap-4">
+          <a href="#privacy" className="hover:text-foreground">Privacy</a>
+          <a href="#terms" className="hover:text-foreground">Terms</a>
+        </div>
+      </div>
+    </footer>
+  );
+}
+```
+
+File: client/lib/geo.ts
+```
+export function haversineMeters(a: {lat: number; lng: number}, b: {lat: number; lng: number}) {
+  const R = 6371e3; // meters
+  const phi1 = (a.lat * Math.PI) / 180;
+  const phi2 = (b.lat * Math.PI) / 180;
+  const dphi = ((b.lat - a.lat) * Math.PI) / 180;
+  const dlambda = ((b.lng - a.lng) * Math.PI) / 180;
+  const s =
+    Math.sin(dphi / 2) * Math.sin(dphi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(dlambda / 2) * Math.sin(dlambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  return R * c;
+}
+
+export async function getCurrentPosition(): Promise<{lat: number; lng: number}> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("Geolocation not supported"));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  });
+}
+```
+
+File: client/lib/face.ts
+```
+export async function getCameraStream(): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+}
+
+export async function captureSignatureFromVideo(video: HTMLVideoElement): Promise<string> {
+  const canvas = document.createElement("canvas");
+  const size = 32;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No canvas context");
+  ctx.drawImage(video, 0, 0, size, size);
+  const { data } = ctx.getImageData(0, 0, size, size);
+  // downscale to grayscale and normalize
+  const gray: number[] = [];
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const v = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    gray.push(v);
+  }
+  // normalize histogram buckets (16 bins)
+  const bins = new Array(16).fill(0);
+  for (const v of gray) {
+    const idx = Math.min(15, Math.floor((v / 256) * 16));
+    bins[idx] += 1;
+  }
+  const total = gray.length;
+  const norm = bins.map((b) => b / total);
+  return norm.join(",");
+}
+
+export function compareSignatures(a: string, b: string): number {
+  const va = a.split(",").map(Number);
+  const vb = b.split(",").map(Number);
+  if (va.length !== vb.length) return 0;
+  // cosine similarity
+  let dot = 0,
+    na = 0,
+    nb = 0;
+  for (let i = 0; i < va.length; i++) {
+    dot += va[i] * vb[i];
+    na += va[i] * va[i];
+    nb += vb[i] * vb[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb) || 1;
+  return dot / denom;
+}
+```
+
+File: client/pages/Index.tsx
+```
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+
+export default function Index() {
+  return (
+    <div className="relative">
+      <section className="container mx-auto grid gap-10 px-4 py-16 md:grid-cols-2 md:py-24">
+        <div className="flex flex-col justify-center">
+          <h1 className="bg-gradient-to-b from-foreground to-foreground/70 bg-clip-text text-4xl font-extrabold tracking-tight text-transparent sm:text-5xl md:text-6xl">
+            Smart attendance for teachers and students
+          </h1>
+          <p className="mt-4 text-lg text-muted-foreground">
+            Create a class session, share a secure link, and confirm student presence using face match and distance to the teacher’s phone. Instant daily and monthly reports.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link to="/teacher">
+              <Button className="bg-brand-600 hover:bg-brand-700">Start as Teacher</Button>
+            </Link>
+            <Link to="/student">
+              <Button variant="outline">I’m a Student</Button>
+            </Link>
+          </div>
+          <ul className="mt-10 grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
+            <li className="flex items-start gap-3"><span className="mt-1 h-2 w-2 rounded-full bg-brand-600"/> Two distinct logins</li>
+            <li className="flex items-start gap-3"><span className="mt-1 h-2 w-2 rounded-full bg-brand-600"/> Session link & copy button</li>
+            <li className="flex items-start gap-3"><span className="mt-1 h-2 w-2 rounded-full bg-brand-600"/> Face match + radius check</li>
+            <li className="flex items-start gap-3"><span className="mt-1 h-2 w-2 rounded-full bg-brand-600"/> Daily & monthly Excel/CSV</li>
+          </ul>
+        </div>
+        <div className="relative">
+          <div className="absolute -inset-6 -z-10 rounded-3xl bg-gradient-to-br from-brand-400/20 to-brand-600/20 blur-2xl"/>
+          <div className="overflow-hidden rounded-2xl border bg-card shadow-xl">
+            <div className="border-b bg-muted/40 px-6 py-3 text-sm font-medium">Live demo</div>
+            <div className="p-6">
+              <ol className="list-decimal pl-5 text-sm text-muted-foreground space-y-2">
+                <li>Create a session on the Teacher page</li>
+                <li>Copy and open the student link (/s/:token)</li>
+                <li>Save your face once in Student page, then allow camera + location</li>
+                <li>Get instant attendance and reports</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" className="container mx-auto px-4 pb-20">
+        <h2 className="text-2xl font-semibold">How it works</h2>
+        <div className="mt-6 grid gap-6 md:grid-cols-3">
+          <div className="rounded-xl border bg-card p-6">
+            <div className="text-sm font-semibold text-muted-foreground">Teachers</div>
+            <p className="mt-2 text-sm">Enter classroom, duration, batch and radius. We capture your phone location and generate a student link with one click.</p>
+          </div>
+          <div className="rounded-xl border bg-card p-6">
+            <div className="text-sm font-semibold text-muted-foreground">Students</div>
+            <p className="mt-2 text-sm">Open the link, verify your saved face, and ensure you’re within the specified radius to get marked present automatically.</p>
+          </div>
+          <div className="rounded-xl border bg-card p-6">
+            <div className="text-sm font-semibold text-muted-foreground">Reports</div>
+            <p className="mt-2 text-sm">Instant daily and monthly summaries. Export per-month CSV compatible with Excel.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+```
+
+File: client/pages/Teacher.tsx
+```
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getCurrentPosition } from "@/lib/geo";
+
+export default function Teacher() {
+  const [teacherName, setTeacherName] = useState("");
+  const [classroom, setClassroom] = useState("");
+  const [duration, setDuration] = useState(60);
+  const [batch, setBatch] = useState("");
+  const [radius, setRadius] = useState(50);
+  const [link, setLink] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+
+  const generate = async () => {
+    setLoading(true);
+    setStatus("Getting location…");
+    try {
+      const loc = await getCurrentPosition();
+      setStatus("Creating session…");
+      const res = await fetch("/api/session/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teacherName, classroom, durationMinutes: Number(duration), batch, radiusMeters: Number(radius), location: loc }),
+      });
+      const data = await res.json();
+      const url = `${window.location.origin}/s/${data.token}`;
+      setLink(url);
+      setStatus("Session created");
+    } catch (e: any) {
+      setStatus(e?.message || "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!link) return;
+    await navigator.clipboard.writeText(link);
+    setStatus("Link copied");
+  };
+
+  return (
+    <div className="container mx-auto px-4 py-10">
+      <div className="mx-auto max-w-2xl">
+        <Card>
+          <CardHeader>
+            <CardTitle>Teacher Login & Session</CardTitle>
+            <CardDescription>Enter class details to generate a student link. We will use your phone location for proximity checks.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Input placeholder="Teacher name" value={teacherName} onChange={(e)=>setTeacherName(e.target.value)} />
+              <Input placeholder="Batch" value={batch} onChange={(e)=>setBatch(e.target.value)} />
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Input placeholder="Classroom number" value={classroom} onChange={(e)=>setClassroom(e.target.value)} />
+              <Input type="number" placeholder="Duration (min)" value={duration} onChange={(e)=>setDuration(Number(e.target.value))} />
+              <Input type="number" placeholder="Radius (m)" value={radius} onChange={(e)=>setRadius(Number(e.target.value))} />
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={generate} disabled={loading || !teacherName || !classroom || !batch} className="bg-brand-600 hover:bg-brand-700">{loading ? "Generating…" : "Generate session link"}</Button>
+            </div>
+            {link && (
+              <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2 text-sm">
+                <div className="flex-1 break-all">{link}</div>
+                <Button size="sm" variant="outline" onClick={copy}>Copy link</Button>
+              </div>
+            )}
+            <div className="text-sm text-muted-foreground">{status}</div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+```
+
+File: client/pages/StudentPortal.tsx
+```
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getCameraStream, captureSignatureFromVideo, compareSignatures } from "@/lib/face";
+import { useNavigate } from "react-router-dom";
+
+export default function StudentPortal() {
+  const [studentId, setStudentId] = useState("");
+  const [studentName, setStudentName] = useState("");
+  const [savedSig, setSavedSig] = useState<string | null>(null);
+  const [sessionLink, setSessionLink] = useState("");
+  const [status, setStatus] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [streaming, setStreaming] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const profile = localStorage.getItem("studentProfile");
+    if (profile) {
+      try {
+        const obj = JSON.parse(profile);
+        setStudentId(obj.studentId || "");
+        setStudentName(obj.studentName || "");
+        setSavedSig(obj.faceSignature || null);
+      } catch {}
+    }
+  }, []);
+
+  const startCam = async () => {
+    if (streaming) return;
+    const stream = await getCameraStream();
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      setStreaming(true);
+    }
+  };
+
+  const stopCam = () => {
+    const v = videoRef.current;
+    if (v && v.srcObject) {
+      (v.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
+      v.srcObject = null;
+    }
+    setStreaming(false);
+  };
+
+  const saveFace = async () => {
+    if (!videoRef.current) return;
+    const sig = await captureSignatureFromVideo(videoRef.current);
+    const profile = { studentId, studentName, faceSignature: sig };
+    localStorage.setItem("studentProfile", JSON.stringify(profile));
+    setSavedSig(sig);
+    setStatus("Face saved for future verification");
+  };
+
+  const verify = async () => {
+    const profile = localStorage.getItem("studentProfile");
+    if (!profile || !videoRef.current) return setStatus("Please save your face first");
+    const obj = JSON.parse(profile);
+    const sig = await captureSignatureFromVideo(videoRef.current);
+    const sim = compareSignatures(sig, obj.faceSignature);
+    setStatus(`Similarity: ${(sim * 100).toFixed(0)}%`);
+  };
+
+  const joinSession = () => {
+    try {
+      const url = new URL(sessionLink);
+      const token = url.pathname.split("/").pop();
+      if (token) navigate(`/s/${token}`);
+    } catch {
+      if (sessionLink.startsWith("/s/")) {
+        navigate(sessionLink);
+      }
+    }
+  };
+
+  return (
+    <div className="container mx-auto px-4 py-10">
+      <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Student Login</CardTitle>
+            <CardDescription>Save your face once. We’ll use it to verify during class check-in.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input placeholder="Student ID" value={studentId} onChange={(e)=>setStudentId(e.target.value)} />
+              <Input placeholder="Name" value={studentName} onChange={(e)=>setStudentName(e.target.value)} />
+            </div>
+            <div className="rounded-lg border p-3">
+              <video ref={videoRef} className="aspect-video w-full rounded-md bg-black/20" />
+              <div className="mt-3 flex gap-2">
+                <Button onClick={startCam} className="bg-brand-600 hover:bg-brand-700">Start camera</Button>
+                <Button onClick={saveFace} variant="secondary" disabled={!studentId || !studentName}>Save face</Button>
+                <Button onClick={verify} variant="outline">Test verify</Button>
+                <Button onClick={stopCam} variant="ghost">Stop</Button>
+              </div>
+            </div>
+            <div className="text-sm text-muted-foreground">{status}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Join a Session</CardTitle>
+            <CardDescription>Paste the teacher’s session link. We will auto-mark attendance after verification.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Input placeholder="https://…/s/abcdef" value={sessionLink} onChange={(e)=>setSessionLink(e.target.value)} />
+            <Button onClick={joinSession}>Go to student interface</Button>
+            {savedSig ? (
+              <div className="text-xs text-muted-foreground">Face on file. Ready to verify.</div>
+            ) : (
+              <div className="text-xs text-destructive">No face saved yet.</div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+```
+
+File: client/pages/StudentSession.tsx
+```
+import { useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getCameraStream, captureSignatureFromVideo, compareSignatures } from "@/lib/face";
+import { getCurrentPosition } from "@/lib/geo";
+
+interface SessionDto {
+  token: string;
+  teacherName: string;
+  classroom: string;
+  durationMinutes: number;
+  batch: string;
+  radiusMeters: number;
+  location?: { lat: number; lng: number };
+}
+
+export default function StudentSession() {
+  const { token } = useParams();
+  const [session, setSession] = useState<SessionDto | null>(null);
+  const [status, setStatus] = useState<string>("");
+  const [checkedIn, setCheckedIn] = useState(false);
+  const [report, setReport] = useState<any | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [streaming, setStreaming] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const res = await fetch(`/api/session/${token}`);
+      if (res.ok) setSession(await res.json());
+    })();
+  }, [token]);
+
+  const startCam = async () => {
+    if (streaming) return;
+    const stream = await getCameraStream();
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      setStreaming(true);
+    }
+  };
+
+  const stopCam = () => {
+    const v = videoRef.current;
+    if (v && v.srcObject) {
+      (v.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
+      v.srcObject = null;
+    }
+    setStreaming(false);
+  };
+
+  const checkIn = async () => {
+    const profileRaw = localStorage.getItem("studentProfile");
+    if (!profileRaw) {
+      setStatus("Please go to Student page to save your face first");
+      return;
+    }
+    const profile = JSON.parse(profileRaw);
+    if (!videoRef.current) return;
+    setStatus("Verifying face…");
+    const sig = await captureSignatureFromVideo(videoRef.current);
+    const sim = compareSignatures(sig, profile.faceSignature);
+    const faceMatch = sim >= 0.9; // threshold
+    if (!faceMatch) {
+      setStatus(`Face mismatch (${(sim * 100).toFixed(0)}%). Try again.`);
+      return;
+    }
+    setStatus("Checking distance…");
+    const loc = await getCurrentPosition();
+    const res = await fetch("/api/attendance/checkin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, studentId: profile.studentId, studentName: profile.studentName, faceMatch, location: loc }),
+    });
+    const data = await res.json();
+    setStatus(data.message || "Checked in");
+    setCheckedIn(true);
+    await loadReport(profile.studentId);
+  };
+
+  const loadReport = async (studentId: string) => {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const res = await fetch(`/api/attendance/student/${encodeURIComponent(studentId)}/summary?month=${ym}`);
+    if (res.ok) setReport(await res.json());
+  };
+
+  const downloadCsv = async () => {
+    const profileRaw = localStorage.getItem("studentProfile");
+    if (!profileRaw) return;
+    const profile = JSON.parse(profileRaw);
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const url = `/api/attendance/student/${encodeURIComponent(profile.studentId)}/export?month=${ym}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance-${profile.studentId}-${ym}.csv`;
+    a.click();
+  };
+
+  return (
+    <div className="container mx-auto px-4 py-10">
+      <div className="mx-auto max-w-3xl">
+        <Card>
+          <CardHeader>
+            <CardTitle>Student Interface</CardTitle>
+            <CardDescription>
+              {session ? (
+                <span>Batch {session.batch} • Classroom {session.classroom} • Radius {session.radiusMeters}m</span>
+              ) : (
+                <span>Loading session…</span>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <video ref={videoRef} className="aspect-video w-full rounded-md bg-black/20" />
+            <div className="flex gap-2">
+              <Button onClick={startCam} className="bg-brand-600 hover:bg-brand-700">Start camera</Button>
+              <Button onClick={checkIn} variant="secondary">Verify & check-in</Button>
+              <Button onClick={stopCam} variant="ghost">Stop</Button>
+            </div>
+            <div className="text-sm text-muted-foreground">{status}</div>
+
+            {checkedIn && (
+              <div className="mt-6 rounded-lg border p-4">
+                <div className="mb-2 text-sm font-semibold">Your report</div>
+                {report ? (
+                  <div className="text-sm">
+                    <div>Month total present: {report.totalPresent}</div>
+                    <div>Total sessions: {report.totalSessions}</div>
+                    <div className="mt-2 max-h-40 overflow-auto rounded border bg-muted/40 p-2 text-xs">
+                      {report.days && report.days.map((d: any) => (
+                        <div key={d.date} className="flex items-center justify-between">
+                          <span>{d.date}</span>
+                          <span className={d.present ? "text-green-600" : "text-red-600"}>{d.present ? "Present" : "Absent"}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <Button onClick={downloadCsv} className="mt-3">Download month CSV</Button>
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">No data yet</div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+```
+
+File: client/global.css
+```
+/** @import must precede all other statements */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Tailwind CSS theme
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   * A different format will require also updating the theme in tailwind.config.ts.
+  */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 224 71% 4%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 71% 4%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71% 4%;
+
+    --primary: 226 69% 45%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 224 71% 4%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 224 71% 4%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 226 69% 45%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 226 69% 45%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 226 71% 55%;
+
+    /* Brand scale for utilities like bg-brand-600 */
+    --brand-50: 226 100% 97%;
+    --brand-100: 226 100% 94%;
+    --brand-200: 226 96% 87%;
+    --brand-300: 226 93% 77%;
+    --brand-400: 226 88% 68%;
+    --brand-500: 226 83% 60%;
+    --brand-600: 226 71% 55%;
+    --brand-700: 226 69% 45%;
+    --brand-800: 226 67% 35%;
+    --brand-900: 226 65% 27%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 226 71% 55%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 226 71% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 226 71% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 226 71% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+```
+
+File: tailwind.config.ts
+```
+import type { Config } from "tailwindcss";
+
+export default {
+  darkMode: ["class"],
+  content: ["./client/**/*.{ts,tsx}"],
+  prefix: "",
+  theme: {
+    container: {
+      center: true,
+      padding: "2rem",
+      screens: {
+        "2xl": "1400px",
+      },
+    },
+    extend: {
+      colors: {
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar-background))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          primary: "hsl(var(--sidebar-primary))",
+          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
+          accent: "hsl(var(--sidebar-accent))",
+          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+          border: "hsl(var(--sidebar-border))",
+          ring: "hsl(var(--sidebar-ring))",
+        },
+        brand: {
+          50: "hsl(var(--brand-50))",
+          100: "hsl(var(--brand-100))",
+          200: "hsl(var(--brand-200))",
+          300: "hsl(var(--brand-300))",
+          400: "hsl(var(--brand-400))",
+          500: "hsl(var(--brand-500))",
+          600: "hsl(var(--brand-600))",
+          700: "hsl(var(--brand-700))",
+          800: "hsl(var(--brand-800))",
+          900: "hsl(var(--brand-900))",
+          DEFAULT: "hsl(var(--brand-600))",
+        },
+      },
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
+      keyframes: {
+        "accordion-down": {
+          from: {
+            height: "0",
+          },
+          to: {
+            height: "var(--radix-accordion-content-height)",
+          },
+        },
+        "accordion-up": {
+          from: {
+            height: "var(--radix-accordion-content-height)",
+          },
+          to: {
+            height: "0",
+          },
+        },
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+      },
+    },
+  },
+  plugins: [require("tailwindcss-animate")],
+} satisfies Config;
+```
+
+File: server/store.ts
+```
+export interface SessionRec {
+  token: string;
+  teacherName: string;
+  classroom: string;
+  durationMinutes: number;
+  batch: string;
+  radiusMeters: number;
+  location?: { lat: number; lng: number };
+  createdAt: number;
+  expiresAt: number;
+}
+
+export interface AttendanceRec {
+  id: string;
+  token: string;
+  studentId: string;
+  studentName: string;
+  timestamp: number;
+  present: boolean;
+  distanceMeters?: number;
+  faceMatch?: boolean;
+}
+
+export const db = {
+  sessions: new Map<string, SessionRec>(),
+  attendance: [] as AttendanceRec[],
+};
+
+export const tokens = {
+  make(): string {
+    const rnd = Math.random().toString(36).slice(2, 10);
+    const ts = Date.now().toString(36).slice(-4);
+    return `${rnd}${ts}`;
+  },
+};
+
+export function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371e3;
+  const phi1 = (a.lat * Math.PI) / 180;
+  const phi2 = (b.lat * Math.PI) / 180;
+  const dphi = ((b.lat - a.lat) * Math.PI) / 180;
+  const dlambda = ((b.lng - a.lng) * Math.PI) / 180;
+  const s = Math.sin(dphi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dlambda / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  return R * c;
+}
+```
+
+File: server/routes/session.ts
+```
+import { RequestHandler } from "express";
+import { db, SessionRec, tokens } from "../store";
+
+export const createSession: RequestHandler = (req, res) => {
+  const { teacherName, classroom, durationMinutes, batch, radiusMeters, location } = req.body || {};
+  if (!teacherName || !classroom || !durationMinutes || !batch || !radiusMeters) {
+    return res.status(400).json({ message: "Missing fields" });
+  }
+  const token = tokens.make();
+  const now = Date.now();
+  const rec: SessionRec = {
+    token,
+    teacherName,
+    classroom,
+    durationMinutes: Number(durationMinutes),
+    batch,
+    radiusMeters: Number(radiusMeters),
+    location,
+    createdAt: now,
+    expiresAt: now + Number(durationMinutes) * 60 * 1000,
+  };
+  db.sessions.set(token, rec);
+  res.json({ token, session: rec });
+};
+
+export const getSession: RequestHandler = (req, res) => {
+  const { token } = req.params as { token: string };
+  const rec = db.sessions.get(token);
+  if (!rec) return res.status(404).json({ message: "Session not found" });
+  res.json(rec);
+};
+```
+
+File: server/routes/attendance.ts
+```
+import { RequestHandler } from "express";
+import { db, distanceMeters } from "../store";
+
+export const checkin: RequestHandler = (req, res) => {
+  const { token, studentId, studentName, faceMatch, location } = req.body || {};
+  const session = db.sessions.get(token);
+  if (!session) return res.status(404).json({ message: "Invalid session" });
+  const now = Date.now();
+  if (now > session.expiresAt) return res.status(400).json({ message: "Session expired" });
+
+  let dist = undefined as number | undefined;
+  if (session.location && location) {
+    dist = distanceMeters(session.location, location);
+  }
+  const within = dist !== undefined ? dist <= session.radiusMeters + 1 : true;
+  const present = Boolean(faceMatch) && within;
+
+  db.attendance.push({
+    id: `${token}:${studentId}:${now}`,
+    token,
+    studentId,
+    studentName,
+    timestamp: now,
+    present,
+    distanceMeters: dist,
+    faceMatch,
+  });
+
+  return res.json({ message: present ? "Present" : "Absent", present, distanceMeters: dist });
+};
+
+export const summary: RequestHandler = (req, res) => {
+  const { studentId } = req.params as { studentId: string };
+  const { month } = req.query as { month?: string };
+  const records = db.attendance.filter((r) => r.studentId === studentId);
+  const byDay = new Map<string, boolean>();
+
+  for (const r of records) {
+    const d = new Date(r.timestamp);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (month && ym !== month) continue;
+    const dayKey = `${ym}-${String(d.getDate()).padStart(2, "0")}`;
+    // last record of the day wins
+    byDay.set(dayKey, r.present);
+  }
+
+  const days = Array.from(byDay.entries()).map(([date, present]) => ({ date, present }));
+  const totalPresent = days.filter((d) => d.present).length;
+  const totalSessions = days.length;
+
+  res.json({ totalPresent, totalSessions, days });
+};
+
+export const exportCsv: RequestHandler = (req, res) => {
+  const { studentId } = req.params as { studentId: string };
+  const { month } = req.query as { month?: string };
+  const records = db.attendance.filter((r) => r.studentId === studentId);
+  const byDay = new Map<string, boolean>();
+
+  for (const r of records) {
+    const d = new Date(r.timestamp);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (month && ym !== month) continue;
+    const dayKey = `${ym}-${String(d.getDate()).padStart(2, "0")}`;
+    byDay.set(dayKey, r.present);
+  }
+
+  const rows = [["Date", "Status"] as const, ...Array.from(byDay.entries()).map(([date, present]) => [date, present ? "Present" : "Absent"])];
+  const csv = rows.map((r) => r.map((c) => (typeof c === "string" && c.includes(",") ? `"${c}"` : c)).join(",")).join("\n");
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename=attendance-${studentId}-${month || "all"}.csv`);
+  res.send(csv);
+};
+```
+
+File: server/index.ts
+```
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import { handleDemo } from "./routes/demo";
+import { createSession, getSession } from "./routes/session";
+import { checkin, summary, exportCsv } from "./routes/attendance";
+
+export function createServer() {
+  const app = express();
+
+  // Middleware
+  app.use(cors());
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // Example API routes
+  app.get("/api/ping", (_req, res) => {
+    const ping = process.env.PING_MESSAGE ?? "ping";
+    res.json({ message: ping });
+  });
+
+  app.get("/api/demo", handleDemo);
+
+  // Session
+  app.post("/api/session/create", createSession);
+  app.get("/api/session/:token", getSession);
+
+  // Attendance
+  app.post("/api/attendance/checkin", checkin);
+  app.get("/api/attendance/student/:studentId/summary", summary);
+  app.get("/api/attendance/student/:studentId/export", exportCsv);
+
+  return app;
+}
+```
