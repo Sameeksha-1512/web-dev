@@ -1,0 +1,168 @@
+# Student Attendance System
+
+This repository-style document contains:
+
+- Overview & architecture
+- Tech stack recommendations
+- Database schema (Postgres) and migrations
+- Express (Node.js) backend with REST endpoints for attendance, geofencing, auth, and class scheduling
+- Example React frontend (teacher, student, and common class info interface)
+  - TeacherDashboard.jsx (map, geofence, live student tracking, auto absence)
+  - StudentDashboard.jsx (GPS, attendance percentage)
+  - ClassInfo.jsx (common interface showing class timings, room number, and teacher)
+- Geofencing algorithm (server-side verification + client sampling)
+- Security, privacy, and anti-spoofing notes
+- Deployment + testing checklist
+
+---
+
+## 1. High-level architecture
+
+- Frontend: React (Vite or Create React App). Uses browser Geolocation API and Leaflet for maps.
+- Backend: Node.js + Express. REST endpoints + WebSocket for live updates.
+- Database: PostgreSQL (or MySQL). Store users, classes, schedules, attendance records, and locations.
+- Hosting: Vercel/Netlify for frontend, Heroku/GCP/AWS for backend, managed Postgres for DB.
+
+Flow:
+1. Teacher creates a class with schedule, room number, and sets a geofence radius.
+2. Students open the StudentPortal, view upcoming class details (time, room number, teacher), and share location during attendance window.
+3. Backend compares student GPS against teacher GPS; marks attendance automatically.
+
+---
+
+## 2. Database schema (Postgres) — simplified
+
+```sql
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('teacher','student')),
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE classes (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  teacher_id INTEGER REFERENCES users(id),
+  room_number TEXT,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  days TEXT[] NOT NULL -- e.g., ['Mon','Wed','Fri']
+);
+
+CREATE TABLE sessions (
+  id SERIAL PRIMARY KEY,
+  class_id INTEGER REFERENCES classes(id),
+  start_at TIMESTAMP NOT NULL,
+  end_at TIMESTAMP NOT NULL,
+  geofence_radius_m INTEGER NOT NULL DEFAULT 100,
+  teacher_lat DOUBLE PRECISION,
+  teacher_lng DOUBLE PRECISION,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE enrollments (
+  id SERIAL PRIMARY KEY,
+  class_id INTEGER REFERENCES classes(id),
+  student_id INTEGER REFERENCES users(id)
+);
+
+CREATE TABLE location_logs (
+  id SERIAL PRIMARY KEY,
+  student_id INTEGER REFERENCES users(id),
+  session_id INTEGER REFERENCES sessions(id),
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  accuracy_m DOUBLE PRECISION,
+  provider TEXT,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE attendance (
+  id SERIAL PRIMARY KEY,
+  student_id INTEGER REFERENCES users(id),
+  session_id INTEGER REFERENCES sessions(id),
+  status TEXT CHECK (status IN ('present','absent','excused')) NOT NULL,
+  marked_at TIMESTAMP DEFAULT now()
+);
+```
+
+---
+
+## 3. New endpoint — Common Class Info
+
+```js
+// GET /api/classes/info — for both teachers and students
+app.get('/api/classes/info', auth, async (req,res)=>{
+  const q = `SELECT c.id, c.name, c.room_number, c.start_time, c.end_time, c.days, u.name AS teacher_name
+             FROM classes c JOIN users u ON c.teacher_id=u.id`;
+  const r = await pool.query(q);
+  res.json(r.rows);
+});
+```
+
+This returns class name, timings, room number, and teacher for display in a shared interface.
+
+---
+
+## 4. React: ClassInfo.jsx (shared interface)
+
+```jsx
+// ClassInfo.jsx
+import React, { useEffect, useState } from 'react';
+
+export default function ClassInfo({ token }){
+  const [classes, setClasses] = useState([]);
+
+  useEffect(()=>{
+    async function load(){
+      const res = await fetch('/api/classes/info',{ headers:{ Authorization: 'Bearer '+token } });
+      const data = await res.json();
+      setClasses(data);
+    }
+    load();
+  },[token]);
+
+  return (
+    <div className="p-4">
+      <h2 className="text-xl font-semibold mb-3">Class Schedule</h2>
+      <table className="min-w-full border">
+        <thead>
+          <tr className="bg-gray-100">
+            <th className="p-2 border">Class</th>
+            <th className="p-2 border">Teacher</th>
+            <th className="p-2 border">Room</th>
+            <th className="p-2 border">Days</th>
+            <th className="p-2 border">Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {classes.map(c=>(
+            <tr key={c.id}>
+              <td className="border p-2">{c.name}</td>
+              <td className="border p-2">{c.teacher_name}</td>
+              <td className="border p-2">{c.room_number}</td>
+              <td className="border p-2">{c.days.join(', ')}</td>
+              <td className="border p-2">{c.start_time} - {c.end_time}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+---
+
+## 5. Integration
+
+- Add `ClassInfo` to both teacher and student dashboards as a separate tab.
+- Teachers can edit timing and room data; students can only view.
+- Useful for easily checking when/where each class occurs before attendance starts.
+
+---
+
+Would you like me to expand this next by connecting **ClassInfo** to a class creation/edit form for teachers (so they can manage schedule and room updates)?
