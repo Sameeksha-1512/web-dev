@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>College Attendance App</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        table { border-collapse: collapse; width: 50%; }
+        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+        th { background: #f4f4f4; }
+        button { padding: 5px 12px; }
+    </style>
+</head>
+<body>
+    <h1>Student Attendance</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Attendance</th>
+            </tr>
+        </thead>
+        <tbody id="student-list">
+            <tr>
+                <td>John Doe</td>
+                <td><button onclick="markAttendance(this)">Present</button></td>
+            </tr>
+            <tr>
+                <td>Jane Smith</td>
+                <td><button onclick="markAttendance(this)">Present</button></td>
+            </tr>
+            <tr>
+                <td>Alex Lee</td>
+                <td><button onclick="markAttendance(this)">Present</button></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <script>
+        function markAttendance(btn) {
+            btn.textContent = "Marked";
+            btn.disabled = true;
+            btn.style.background = "#8bc34a";
+        }
+    </script>
+</body>
+</html>
